@@ -122,8 +122,12 @@ install_dkms_driver() {
   log "Installing $name"
   local src="/usr/local/src/$name"
   rm -rf "$src"
-  git clone --depth 1 "$repo" "$src"
-  (cd "$src" && "$@")
+  # Full clone (not --depth 1): these installers derive their version from
+  # `git describe --tags`, which needs the tags.
+  git clone "$repo" "$src"
+  # Under sudo, git refuses a root-owned checkout as "dubious ownership"
+  # because it compares against SUDO_UID, so trust this checkout explicitly.
+  (cd "$src" && GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$src" "$@")
 }
 
 install_xpadneo() {

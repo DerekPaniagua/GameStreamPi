@@ -76,7 +76,7 @@ status() {
     iw dev "$dev" link | awk '/SSID|signal|freq|tx bitrate/ {$1=$1; print "            " $0}'
   fi
 
-  echo "Drivers:    $(dkms status 2>/dev/null | grep -oE '^(hid-xpadneo|xone)[^,:]*' | paste -sd' ' - || true)"
+  echo "Drivers:    $(/usr/sbin/dkms status 2>/dev/null | grep -oE '^(hid-xpadneo|xone)[^,:]*' | paste -sd' ' - || true)"
 
   echo "Controllers:"
   local found=0 mac name
