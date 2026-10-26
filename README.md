@@ -90,14 +90,18 @@ Installer options:
 
 ### 4. Pair a controller
 
-Over SSH:
+Turn the controller on, then hold its pair button (top edge, next to the USB
+port) until the Xbox logo flashes rapidly. The Pi pairs it automatically
+within a few seconds, and the logo stays lit when it's connected. After that
+the controller reconnects on its own whenever you turn it on.
 
-```bash
-gamestreampi pair-controller
-```
+To keep Bluetooth scanning from adding lag or slowing Wi-Fi, the Pi only looks
+for new controllers while **no** controller is connected. To add a second
+controller, turn the first one off (hold the Xbox button for about 6 seconds),
+pair the new one, then turn the first one back on.
 
-Hold the controller's pair button until the Xbox logo flashes rapidly. Once it
-is paired, the controller reconnects on its own whenever you turn it on.
+If pairing doesn't work, run `gamestreampi pair-controller` over SSH while you
+pair. It shows what the pairing service is doing.
 
 **USB cable:** just plug it in, no pairing needed.
 **Xbox Wireless Adapter:** plug in the dongle (installed with `--xone`), then
@@ -137,7 +141,7 @@ helper commands, SSH in:
 
 ```
 gamestreampi status          # Moonlight, controllers, network, temperature, throttling
-gamestreampi pair-controller # pair another controller
+gamestreampi pair-controller # watch the auto-pairing service while pairing
 gamestreampi restart         # restart Moonlight on the TV
 gamestreampi kiosk off       # stop auto-launching Moonlight; the TV shows a shell
 gamestreampi kiosk on        # go back to boot-to-Moonlight
@@ -155,7 +159,9 @@ login prompt on a second console.
   controllers: correct mapping, rumble, battery) and optionally
   [xone](https://github.com/dlundqvist/xone) (wireless adapter), both through DKMS.
   DKMS rebuilds them automatically after kernel updates.
-- Bluetooth: enables fast reconnects and automatic re-pairing.
+- Bluetooth: enables fast reconnects and automatic re-pairing, and runs
+  `gamestreampi-autopair.service`, which pairs any Xbox controller put into
+  pairing mode while no controller is connected.
 - Disables Wi-Fi power saving, which causes latency spikes.
 - Pins the CPU governor to `performance` (`gamestreampi-cpu-performance.service`).
 - Adds `consoleblank=0` (and optionally the 1080p mode) to `/boot/firmware/cmdline.txt`.

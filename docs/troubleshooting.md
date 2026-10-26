@@ -38,7 +38,10 @@ for current instructions, or flash the previous Raspberry Pi OS release
   Xbox. Old firmware is the most common cause.
 - Make sure the logo is flashing *rapidly*, which means pairing mode. Slow
   flashing means it's trying to reconnect to its last device.
-- Run `bluetoothctl devices` to see whether the Pi can see it at all.
+- Turn off any other connected controller (including a USB one). The Pi only
+  scans for new controllers while none is connected.
+- Run `gamestreampi pair-controller` while pairing to watch the service, or
+  `journalctl -u gamestreampi-autopair` for its history.
 
 **Pairs but buttons are wrong / no rumble**
 - Check that xpadneo is loaded: `dkms status` should list `hid-xpadneo`, and

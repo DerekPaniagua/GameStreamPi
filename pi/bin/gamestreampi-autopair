@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# Pairs Xbox controllers over Bluetooth with no other input needed: hold the
+# controller's pair button and this service pairs, trusts and connects it.
+#
+# It only scans while no controller is connected. Bluetooth discovery shares
+# the radio with Wi-Fi and adds input lag, so it must never run mid-game.
+# Runs as root under gamestreampi-autopair.service; logs go to the journal.
+set -u
+
+SCAN_SECONDS=30
+REST_SECONDS=10
+# A paired controller that keeps advertising this long without reconnecting
+# has been reset into pairing mode (e.g. after pairing with an Xbox or PC).
+REPAIR_AFTER_SECONDS=20
+
+declare -A first_seen=()
+# Result of the scan functions, kept in globals rather than printed so that
+# first_seen updates aren't lost in a $(...) subshell.
+candidate=""
+
+# True if any game controller is connected by any means (Bluetooth, USB, dongle).
+controller_connected() {
+  local dev
+  for dev in /dev/input/event*; do
+    udevadm info -q property "$dev" 2>/dev/null | grep -q '^ID_INPUT_JOYSTICK=1' && return 0
+  done
+  return 1
+}
+
+# Sets candidate to an Xbox controller that is advertising right now (only
+# visible while a scan is running) and should be paired.
+find_candidate() {
+  local mac info now
+  candidate=""
+  now=$(date +%s)
+  for mac in $(bluetoothctl devices | awk '/Xbox.*Controller/ {print $2}'); do
+    info=$(bluetoothctl info "$mac")
+    grep -q 'Connected: yes' <<<"$info" && continue
+    if ! grep -q 'RSSI:' <<<"$info"; then
+      unset 'first_seen[$mac]'
+      continue
+    fi
+    if grep -q 'Paired: yes' <<<"$info"; then
+      # Give a known controller time to reconnect on its own first.
+      : "${first_seen[$mac]:=$now}"
+      local since="${first_seen[$mac]}"
+      (( now - since >= REPAIR_AFTER_SECONDS )) || continue
+    fi
+    candidate="$mac"
+    return 0
+  done
+  return 1
+}
+
+# Scans for up to SCAN_SECONDS, setting candidate if a controller wants pairing.
+scan_for_candidate() {
+  local pid
+  candidate=""
+  bluetoothctl --timeout "$SCAN_SECONDS" scan on >/dev/null 2>&1 &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep 2
+    find_candidate && break
+    controller_connected && break
+  done
+  # Discovery belongs to the bluetoothctl client and stops when it exits.
+  # BlueZ recommends not pairing while discovery is running.
+  kill "$pid" 2>/dev/null
+  wait "$pid" 2>/dev/null
+}
+
+pair() {
+  local mac="$1"
+  unset 'first_seen[$mac]'
+  if bluetoothctl info "$mac" | grep -q 'Paired: yes'; then
+    # Stale pairing: forget it so the next scan rediscovers it fresh.
+    echo "Controller $mac is in pairing mode; replacing its old pairing"
+    bluetoothctl remove "$mac" >/dev/null
+    return
+  fi
+  echo "Pairing controller $mac"
+  if ! bluetoothctl pair "$mac"; then
+    echo "Pairing $mac failed; will retry"
+    bluetoothctl remove "$mac" >/dev/null 2>&1
+    return
+  fi
+  bluetoothctl trust "$mac" >/dev/null
+  # Pairing usually leaves it connected already; connect just in case.
+  bluetoothctl connect "$mac" >/dev/null 2>&1 || true
+  echo "Paired controller $mac"
+}
+
+bluetoothctl power on >/dev/null
+bluetoothctl pairable on >/dev/null
+echo "Watching for Xbox controllers in pairing mode"
+
+while true; do
+  if controller_connected; then
+    sleep 5
+    continue
+  fi
+  scan_for_candidate
+  if [ -n "$candidate" ]; then
+    pair "$candidate"
+  else
+    sleep "$REST_SECONDS"
+  fi
+done

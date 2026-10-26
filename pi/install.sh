@@ -167,6 +167,15 @@ configure_bluetooth() {
   systemctl restart bluetooth
 }
 
+configure_autopair() {
+  log "Enabling automatic controller pairing"
+  install -m 755 "$REPO_DIR/bin/gamestreampi-autopair" /usr/local/bin/gamestreampi-autopair
+  install -m 644 "$REPO_DIR/systemd/gamestreampi-autopair.service" /etc/systemd/system/
+  systemctl daemon-reload
+  systemctl enable gamestreampi-autopair.service
+  systemctl restart gamestreampi-autopair.service
+}
+
 configure_wifi_powersave() {
   # Wi-Fi power saving adds latency spikes that show up as stutter.
   if [ -d /etc/NetworkManager/conf.d ]; then
@@ -247,6 +256,7 @@ install_kernel_headers
 install_xpadneo
 [ "$WITH_XONE" -eq 1 ] && install_xone
 configure_bluetooth
+configure_autopair
 configure_wifi_powersave
 [ "$PERF" -eq 1 ] && configure_performance
 configure_display
@@ -258,7 +268,8 @@ cat <<EOF
 
 Next steps:
   1. Reboot:                 sudo reboot
-  2. Pair a controller:      gamestreampi pair-controller   (over SSH)
+  2. Pair a controller:      hold its pair button until the Xbox logo flashes
+                             rapidly; the Pi pairs it automatically.
   3. In Moonlight on the TV, select your PC and enter the PIN in Sunshine's
      web UI on the PC (https://localhost:47990).
 

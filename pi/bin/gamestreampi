@@ -9,7 +9,7 @@ usage() {
 Usage: gamestreampi <command>
 
 Commands:
-  pair-controller   Pair an Xbox controller over Bluetooth
+  pair-controller   Watch the automatic pairing service while you pair a controller
   status            Show Moonlight, controller, network and thermal status
   restart           Restart Moonlight on the TV
   kiosk on|off      Turn boot-to-Moonlight on or off (off gives you a shell on the TV)
@@ -21,39 +21,14 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 # --- pair-controller -------------------------------------------------------------
 
-# Prints MACs of nearby Xbox controllers that aren't already connected.
-find_unconnected_controllers() {
-  bluetoothctl devices | awk '/Xbox Wireless Controller/ {print $2}' | while read -r mac; do
-    bluetoothctl info "$mac" | grep -q "Connected: yes" || echo "$mac"
-  done
-}
-
 pair_controller() {
-  bluetoothctl power on >/dev/null
-  echo "Turn on the controller, then hold its pair button (top edge, near the USB port)"
-  echo "until the Xbox logo flashes rapidly."
+  systemctl is-active --quiet gamestreampi-autopair \
+    || die "The auto-pairing service isn't running. Try: sudo systemctl restart gamestreampi-autopair"
+  echo "Hold the controller's pair button (top edge, near the USB port) until the"
+  echo "Xbox logo flashes rapidly. The Pi pairs it automatically, as long as no other"
+  echo "controller is connected (turn others off first). Watching (Ctrl+C to stop)..."
   echo
-  echo "Scanning for up to 60 seconds..."
-
-  local mac="" i
-  for i in $(seq 1 12); do
-    bluetoothctl --timeout 5 scan on >/dev/null 2>&1 || true
-    mac="$(find_unconnected_controllers | head -n1)"
-    [ -n "$mac" ] && break
-  done
-  [ -n "$mac" ] || die "No controller in pairing mode found. Is the logo flashing rapidly?"
-
-  echo "Found controller $mac, pairing..."
-  # A controller in pairing mode has forgotten us, so drop any stale pairing.
-  if bluetoothctl info "$mac" | grep -q "Paired: yes"; then
-    bluetoothctl remove "$mac" >/dev/null || true
-    bluetoothctl --timeout 5 scan on >/dev/null 2>&1 || true
-  fi
-  bluetoothctl pair "$mac"
-  bluetoothctl trust "$mac"
-  bluetoothctl connect "$mac"
-  echo
-  echo "Paired. The controller will reconnect automatically when you turn it on."
+  journalctl -fn0 -o cat -u gamestreampi-autopair
 }
 
 # --- status ----------------------------------------------------------------------
