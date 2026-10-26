@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Runs Moonlight full-screen on the console and relaunches it if it exits or
+# crashes, so the TV always lands back in Moonlight. Started from the login
+# profile on tty1; see `gamestreampi kiosk` to turn this off.
+set -u
+
+KIOSK_OFF="$HOME/.config/gamestreampi/kiosk-off"
+LOG_DIR="$HOME/.local/state/gamestreampi"
+LOG="$LOG_DIR/moonlight.log"
+
+mkdir -p "$LOG_DIR"
+
+while [ ! -e "$KIOSK_OFF" ]; do
+  [ -f "$LOG" ] && mv -f "$LOG" "$LOG.1"
+  moonlight-qt >"$LOG" 2>&1
+  # Brief pause so a crash loop can't peg the CPU.
+  sleep 1
+done

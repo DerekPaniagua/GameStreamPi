@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# Day-to-day helper for a GameStreamPi box. Usually run over SSH.
+set -euo pipefail
+
+KIOSK_OFF="$HOME/.config/gamestreampi/kiosk-off"
+
+usage() {
+  cat <<'EOF'
+Usage: gamestreampi <command>
+
+Commands:
+  pair-controller   Pair an Xbox controller over Bluetooth
+  status            Show Moonlight, controller, network and thermal status
+  restart           Restart Moonlight on the TV
+  kiosk on|off      Turn boot-to-Moonlight on or off (off gives you a shell on the TV)
+  logs              Show the most recent Moonlight log
+EOF
+}
+
+die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+
+# --- pair-controller -------------------------------------------------------------
+
+# Prints MACs of nearby Xbox controllers that aren't already connected.
+find_unconnected_controllers() {
+  bluetoothctl devices | awk '/Xbox Wireless Controller/ {print $2}' | while read -r mac; do
+    bluetoothctl info "$mac" | grep -q "Connected: yes" || echo "$mac"
+  done
+}
+
+pair_controller() {
+  bluetoothctl power on >/dev/null
+  echo "Turn on the controller, then hold its pair button (top edge, near the USB port)"
+  echo "until the Xbox logo flashes rapidly."
+  echo
+  echo "Scanning for up to 60 seconds..."
+
+  local mac="" i
+  for i in $(seq 1 12); do
+    bluetoothctl --timeout 5 scan on >/dev/null 2>&1 || true
+    mac="$(find_unconnected_controllers | head -n1)"
+    [ -n "$mac" ] && break
+  done
+  [ -n "$mac" ] || die "No controller in pairing mode found. Is the logo flashing rapidly?"
+
+  echo "Found controller $mac, pairing..."
+  # A controller in pairing mode has forgotten us, so drop any stale pairing.
+  if bluetoothctl info "$mac" | grep -q "Paired: yes"; then
+    bluetoothctl remove "$mac" >/dev/null || true
+    bluetoothctl --timeout 5 scan on >/dev/null 2>&1 || true
+  fi
+  bluetoothctl pair "$mac"
+  bluetoothctl trust "$mac"
+  bluetoothctl connect "$mac"
+  echo
+  echo "Paired. The controller will reconnect automatically when you turn it on."
+}
+
+# --- status ----------------------------------------------------------------------
+
+status() {
+  local version running kiosk
+  version="$(dpkg-query -W -f='${Version}' moonlight-qt 2>/dev/null || echo 'not installed')"
+  running="$(pgrep -x moonlight-qt >/dev/null && echo running || echo 'not running')"
+  kiosk="$([ -e "$KIOSK_OFF" ] && echo off || echo on)"
+
+  echo "Moonlight:  $version ($running), kiosk mode $kiosk"
+
+  echo "Thermals:   $(vcgencmd measure_temp 2>/dev/null | cut -d= -f2), throttled=$(vcgencmd get_throttled 2>/dev/null | cut -d= -f2) (0x0 is good)"
+  echo "CPU gov:    $(cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor 2>/dev/null || echo unknown)"
+
+  local dev
+  dev="$(ip route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<NF;i++) if ($i=="dev") print $(i+1)}')"
+  echo "Network:    ${dev:-offline} $(hostname -I 2>/dev/null | awk '{print $1}')"
+  if [[ "${dev:-}" == wl* ]]; then
+    iw dev "$dev" link | awk '/SSID|signal|freq|tx bitrate/ {$1=$1; print "            " $0}'
+  fi
+
+  echo "Drivers:    $(dkms status 2>/dev/null | grep -oE '^(hid-xpadneo|xone)[^,:]*' | paste -sd' ' - || true)"
+
+  echo "Controllers:"
+  local found=0 mac name
+  while read -r _ mac name; do
+    [ -n "${mac:-}" ] || continue
+    found=1
+    if bluetoothctl info "$mac" | grep -q "Connected: yes"; then
+      echo "            $name ($mac) connected"
+    else
+      echo "            $name ($mac) paired, not connected"
+    fi
+  done < <(bluetoothctl devices 2>/dev/null | grep -i "controller" || true)
+  for js in /dev/input/by-id/*-event-joystick; do
+    [ -e "$js" ] || continue
+    found=1
+    echo "            $(basename "$js") (wired/dongle)"
+  done
+  [ "$found" -eq 1 ] || echo "            none"
+}
+
+# --- kiosk / restart -------------------------------------------------------------
+
+kiosk() {
+  case "${1:-}" in
+    on)
+      rm -f "$KIOSK_OFF"
+      # Re-login on tty1 so the profile hook starts Moonlight.
+      sudo systemctl restart getty@tty1
+      echo "Kiosk mode on. Moonlight is starting on the TV."
+      ;;
+    off)
+      mkdir -p "$(dirname "$KIOSK_OFF")"
+      touch "$KIOSK_OFF"
+      pkill -x moonlight-qt || true
+      echo "Kiosk mode off. The TV now shows a shell; run 'gamestreampi kiosk on' to go back."
+      ;;
+    *) die "Usage: gamestreampi kiosk on|off" ;;
+  esac
+}
+
+restart() {
+  pkill -x moonlight-qt || die "Moonlight isn't running."
+  echo "Restarting Moonlight..."
+}
+
+case "${1:-}" in
+  pair-controller) pair_controller ;;
+  status)          status ;;
+  restart)         restart ;;
+  kiosk)           kiosk "${2:-}" ;;
+  logs)            cat "$HOME/.local/state/gamestreampi/moonlight.log" ;;
+  -h|--help|"")    usage ;;
+  *)               usage; exit 1 ;;
+esac
