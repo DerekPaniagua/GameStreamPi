@@ -1,0 +1,14 @@
+[Unit]
+Description=GameStreamPi: Bluetooth pairing agent that accepts Xbox controllers
+Requires=bluetooth.service
+After=bluetooth.service
+# Restart with bluetoothd so the agent re-registers with the new instance.
+PartOf=bluetooth.service
+
+[Service]
+ExecStart=/usr/local/bin/gamestreampi-bt-agent
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

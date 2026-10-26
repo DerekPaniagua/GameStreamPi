@@ -71,7 +71,7 @@ install_base_packages() {
   log "Installing base packages"
   apt-get update
   apt-get install -y --no-install-recommends \
-    git curl ca-certificates lsb-release dkms bluez iw
+    git curl ca-certificates lsb-release dkms bluez iw python3-dbus python3-gi
 }
 
 install_moonlight() {
@@ -163,17 +163,28 @@ configure_bluetooth() {
   # Let a controller that forgot its pairing re-pair without manual cleanup.
   set_bluez_option "$conf" JustWorksRepairing always
   set_bluez_option "$conf" AutoEnable true
+  # Xbox Series controllers (Bluetooth LE) treat the bond as incomplete and
+  # drop it after ~150s unless bluez shares its identity, which needs privacy.
+  # See xpadneo's docs/TROUBLESHOOTING.md ("Controller Keeps Blinking").
+  set_bluez_option "$conf" Privacy device
+  # Short LE connection intervals (units of 1.25ms) for low input latency.
+  set_bluez_option "$conf" MinConnectionInterval 7
+  set_bluez_option "$conf" MaxConnectionInterval 9
+  set_bluez_option "$conf" ConnectionLatency 0
+  set_bluez_option "$conf" ConnectionSupervisionTimeout 200
   systemctl enable bluetooth
   systemctl restart bluetooth
 }
 
 configure_autopair() {
   log "Enabling automatic controller pairing"
+  install -m 755 "$REPO_DIR/bin/gamestreampi-bt-agent" /usr/local/bin/gamestreampi-bt-agent
   install -m 755 "$REPO_DIR/bin/gamestreampi-autopair" /usr/local/bin/gamestreampi-autopair
+  install -m 644 "$REPO_DIR/systemd/gamestreampi-bt-agent.service" /etc/systemd/system/
   install -m 644 "$REPO_DIR/systemd/gamestreampi-autopair.service" /etc/systemd/system/
   systemctl daemon-reload
-  systemctl enable gamestreampi-autopair.service
-  systemctl restart gamestreampi-autopair.service
+  systemctl enable gamestreampi-bt-agent.service gamestreampi-autopair.service
+  systemctl restart gamestreampi-bt-agent.service gamestreampi-autopair.service
 }
 
 configure_wifi_powersave() {

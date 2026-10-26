@@ -1,7 +1,7 @@
 [Unit]
 Description=GameStreamPi: automatically pair Xbox controllers in pairing mode
-Requires=bluetooth.service
-After=bluetooth.service
+Requires=bluetooth.service gamestreampi-bt-agent.service
+After=bluetooth.service gamestreampi-bt-agent.service
 
 [Service]
 ExecStart=/usr/local/bin/gamestreampi-autopair
